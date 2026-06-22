@@ -1,12 +1,17 @@
 __pycache__/
+**/__pycache__/
 *.py[cod]
 *.pkl
 *.joblib
+*.parquet
+*.csv
 .ipynb_checkpoints/
 .pytest_cache/
 .venv/
 venv/
 env/
+wandb/
+mlruns/
 
 data/raw/*
 !data/raw/.gitkeep
@@ -15,7 +20,13 @@ data/raw/train_supplement/*
 !data/raw/train_supplement/.gitkeep
 data/processed/*
 !data/processed/.gitkeep
+submissions/
 data/submissions/*
 !data/submissions/.gitkeep
 models/*
 !models/.gitkeep
+reports/oof_predictions*
+!reports/
+!reports/baseline_cv.json
+!reports/experiment_summary.md
+!reports/label_stats.csv

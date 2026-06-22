@@ -44,17 +44,30 @@ def build_pipeline(config: ProjectConfig):
     return Pipeline([("features", features), ("regressor", regressor)])
 
 
-def cross_validate(train: pd.DataFrame, config: ProjectConfig) -> tuple[pd.DataFrame, dict[str, float]]:
+def _effective_n_splits(non_missing_count: int, requested_splits: int, target: str) -> int:
+    if non_missing_count < 2:
+        raise ValueError(
+            f"Target {target} has only {non_missing_count} labeled rows; "
+            "at least 2 are required for K-fold CV."
+        )
+    return min(requested_splits, non_missing_count)
+
+
+def cross_validate_detailed(train: pd.DataFrame, config: ProjectConfig) -> dict[str, Any]:
     oof = pd.DataFrame(index=train.index, columns=config.target_columns, dtype=float)
     weights = estimate_competition_weights(train, config.target_columns)
+    fold_metrics: dict[str, list[dict[str, float | int]]] = {}
 
     for target in config.target_columns:
         target_mask = train[target].notna()
         target_train = train.loc[target_mask].reset_index()
-        if len(target_train) < config.n_splits:
-            continue
+        n_splits = _effective_n_splits(len(target_train), config.n_splits, target)
 
-        kfold = KFold(n_splits=config.n_splits, shuffle=True, random_state=config.random_state)
+        if n_splits < config.n_splits:
+            print(f"{target}: reducing n_splits from {config.n_splits} to {n_splits}")
+
+        fold_metrics[target] = []
+        kfold = KFold(n_splits=n_splits, shuffle=True, random_state=config.random_state)
         for fold, (fit_idx, valid_idx) in enumerate(kfold.split(target_train), start=1):
             fit_frame = target_train.iloc[fit_idx]
             valid_frame = target_train.iloc[valid_idx]
@@ -62,12 +75,45 @@ def cross_validate(train: pd.DataFrame, config: ProjectConfig) -> tuple[pd.DataF
             model.fit(fit_frame[[config.smiles_column]], fit_frame[target])
             pred = model.predict(valid_frame[[config.smiles_column]])
             oof.loc[valid_frame["index"].to_numpy(), target] = pred
-            print(f"{target} fold {fold}: MAE={np.mean(np.abs(pred - valid_frame[target].to_numpy())):.6f}")
+            mae = float(np.mean(np.abs(pred - valid_frame[target].to_numpy())))
+            fold_metrics[target].append(
+                {
+                    "fold": fold,
+                    "n_train": int(len(fit_frame)),
+                    "n_valid": int(len(valid_frame)),
+                    "mae": mae,
+                }
+            )
+            print(f"{target} fold {fold}: MAE={mae:.6f}")
 
     mae_by_target = property_mae(train[config.target_columns], oof, config.target_columns)
-    mae_by_target["weighted_mae_estimate"] = weighted_mae(
+    overall_metric = weighted_mae(
         train[config.target_columns], oof, config.target_columns, weights
     )
+    mae_by_target["weighted_mae_estimate"] = overall_metric
+
+    target_summary = {}
+    for target, rows in fold_metrics.items():
+        values = np.array([row["mae"] for row in rows], dtype=float)
+        target_summary[target] = {
+            "mean": float(values.mean()),
+            "std": float(values.std(ddof=1)) if len(values) > 1 else 0.0,
+            "oof_mae": mae_by_target.get(target),
+        }
+
+    return {
+        "oof": oof,
+        "scores": mae_by_target,
+        "fold_metrics": fold_metrics,
+        "target_summary": target_summary,
+        "overall_metric": overall_metric,
+    }
+
+
+def cross_validate(train: pd.DataFrame, config: ProjectConfig) -> tuple[pd.DataFrame, dict[str, float]]:
+    result = cross_validate_detailed(train, config)
+    oof = result["oof"]
+    mae_by_target = result["scores"]
     return oof, mae_by_target
 
 

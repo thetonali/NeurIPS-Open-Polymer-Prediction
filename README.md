@@ -121,3 +121,36 @@ Kaggle Code Competition 要求：
 - 对 `train_supplement` 做更细致的字段映射和去重。
 - 使用公开预训练分子模型生成 embedding。
 - 针对每个 property 单独调参，因为 `Tg`、`FFV`、`Tc`、`Density`、`Rg` 的噪声和数据量差异很大。
+
+## Current Baseline Evidence
+
+This repository is currently maintained as a reproducible baseline for the
+NeurIPS Open Polymer Prediction task. The goal of this phase is to make the
+data path, cross-validation run, and saved evidence artifacts easy to reproduce
+and explain in an academic or interview setting.
+
+The current baseline uses:
+
+- SMILES character-level TF-IDF features.
+- Basic SMILES statistics such as length, atom text counts, branches, rings,
+  bond symbols, and bracket/star counts.
+- Optional RDKit descriptors when RDKit is installed in the environment.
+- Five independent target models for `Tg`, `FFV`, `Tc`, `Density`, and `Rg`.
+- K-fold cross-validation with one out-of-fold prediction set.
+
+Run a smoke test with:
+
+```bash
+python scripts/train_cv.py --config config/default.json --sample-size 1000
+```
+
+Each CV run writes a small evidence pack under `reports/`:
+
+- `reports/baseline_cv.json`
+- `reports/label_stats.csv`
+- `reports/experiment_summary.md`
+- `reports/oof_predictions.parquet` or `reports/oof_predictions.csv`
+
+Next steps are feature ablation, group-aware validation, Morgan fingerprints,
+and a controlled comparison of simple model families. No leaderboard rank is
+claimed here unless it is backed by a real saved result.
